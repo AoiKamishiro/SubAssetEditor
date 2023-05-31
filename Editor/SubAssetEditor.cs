@@ -1,8 +1,9 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 using System.Linq;
 using System.IO;
+using UnityEditor.Animations;
 
 namespace Coffee.Editors
 {
@@ -111,7 +112,7 @@ namespace Coffee.Editors
 
         private void AddSubAsset(Object asset)
         {
-            AddSubAsset(new Object[] {asset});
+            AddSubAsset(new Object[] { asset });
         }
 
         /// <summary>
@@ -194,99 +195,115 @@ namespace Coffee.Editors
                 }
             }
 
-            EditorGUI.indentLevel--;
-
-            GUILayout.Space(10);
-            using (new EditorGUILayout.HorizontalScope())
+            using (EditorGUILayout.ScrollViewScope scrollView = new EditorGUILayout.ScrollViewScope(_scrollPosition))
             {
-                var rLabel = EditorGUILayout.GetControlRect(GUILayout.Width(80));
-                GUI.Toggle(rLabel, true, "<b>Sub Asset</b>", "IN Foldout");
+                _scrollPosition = scrollView.scrollPosition;
+                EditorGUI.indentLevel--;
 
-                var rRename = EditorGUILayout.GetControlRect(GUILayout.Width(60));
-                _isRenaming = GUI.Toggle(rRename, _isRenaming, "Rename", EditorStyles.miniButton);
-                GUILayout.FlexibleSpace();
-            }
-
-            EditorGUI.indentLevel++;
-            foreach (var asset in _subAssets)
-            {
-                var r = EditorGUILayout.GetControlRect(true);
-
-                r.width -= 60;
-                var rField = new Rect(r);
-                if (_isRenaming)
+                GUILayout.Space(10);
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    rField.width = 12;
-                    rField.height = 12;
-                    //Draw icon of current object.
-                    EditorGUI.LabelField(r, new GUIContent(AssetPreview.GetMiniThumbnail(asset)));
-                    EditorGUI.BeginChangeCheck();
+                    var rLabel = EditorGUILayout.GetControlRect(GUILayout.Width(80));
+                    GUI.Toggle(rLabel, true, "<b>Sub Asset</b>", "IN Foldout");
 
-                    rField.x += rField.width + 4;
-                    rField.width = r.width - rField.width;
-                    rField.height = r.height;
-                    asset.name = EditorGUI.DelayedTextField(rField, asset.name);
-                    if (EditorGUI.EndChangeCheck())
+                    var rRename = EditorGUILayout.GetControlRect(GUILayout.Width(60));
+                    _isRenaming = GUI.Toggle(rRename, _isRenaming, "Rename", EditorStyles.miniButton);
+                    GUILayout.FlexibleSpace();
+                    if (GUILayout.Button("Show All"))
                     {
-                        AssetDatabase.SaveAssets();
+                        ShowAll();
+                    }
+                    if (GUILayout.Button("Show Part"))
+                    {
+                        ShowPart();
+                    }
+
+                    if (GUILayout.Button("Delete Unused All"))
+                    {
+                        DeleteUnusedAll();
                     }
                 }
-                else
+
+                EditorGUI.indentLevel++;
+                foreach (var asset in _subAssets)
                 {
-                    EditorGUI.ObjectField(rField, asset, asset.GetType(), false);
+                    var r = EditorGUILayout.GetControlRect(true);
+
+                    r.width -= 60;
+                    var rField = new Rect(r);
+                    if (_isRenaming)
+                    {
+                        rField.width = 12;
+                        rField.height = 12;
+                        //Draw icon of current object.
+                        EditorGUI.LabelField(r, new GUIContent(AssetPreview.GetMiniThumbnail(asset)));
+                        EditorGUI.BeginChangeCheck();
+
+                        rField.x += rField.width + 4;
+                        rField.width = r.width - rField.width;
+                        rField.height = r.height;
+                        asset.name = EditorGUI.DelayedTextField(rField, asset.name);
+                        if (EditorGUI.EndChangeCheck())
+                        {
+                            AssetDatabase.SaveAssets();
+                        }
+                    }
+                    else
+                    {
+                        EditorGUI.ObjectField(rField, asset, asset.GetType(), false);
+                    }
+
+                    r.x += r.width;
+                    r.width = 20;
+                    r.height = 20;
+                    if (!_referencingAssets.Contains(asset))
+                    {
+                        GUI.Label(r, _contentNoRef);
+                    }
+
+                    r.x += r.width;
+                    if (GetFileExtension(asset).Length != 0 && GUI.Button(r, _contentExport, EditorStyles.label))
+                    {
+                        ExportSubAsset(asset);
+                    }
+
+                    r.x += r.width;
+                    if (GUI.Button(r, _contentDelete, EditorStyles.label))
+                    {
+                        DeleteSubAsset(asset);
+                    }
                 }
 
-                r.x += r.width;
-                r.width = 20;
-                r.height = 20;
-                if (!_referencingAssets.Contains(asset))
+                EditorGUI.indentLevel--;
+
+                GUILayout.Space(10);
+                GUILayout.Toggle(true, "<b>Referencing Objects</b>", "IN Foldout");
+                EditorGUI.indentLevel++;
+                EditorGUILayout.HelpBox("Sub assets are excluded.", MessageType.None);
+                foreach (var asset in _referencingAssets.Except(_subAssets))
                 {
-                    GUI.Label(r, _contentNoRef);
+                    var r = EditorGUILayout.GetControlRect();
+
+                    r.width -= 20;
+                    EditorGUI.ObjectField(r, asset, asset.GetType(), false);
+
+                    r.x += r.width;
+                    r.y -= 1;
+                    r.width = 20;
+                    r.height = 20;
+
+                    // Add object to sub asset.
+                    if (GUI.Button(r, _contentAdd, EditorStyles.label))
+                    {
+                        var addAsset = asset;
+                        EditorApplication.delayCall += () => AddSubAsset(addAsset);
+                    }
                 }
 
-                r.x += r.width;
-                if (GetFileExtension(asset).Length != 0 && GUI.Button(r, _contentExport, EditorStyles.label))
-                {
-                    ExportSubAsset(asset);
-                }
+                EditorGUI.indentLevel--;
 
-                r.x += r.width;
-                if (GUI.Button(r, _contentDelete, EditorStyles.label))
-                {
-                    DeleteSubAsset(asset);
-                }
+                DrawImportArea();
             }
-
-            EditorGUI.indentLevel--;
-
-            GUILayout.Space(10);
-            GUILayout.Toggle(true, "<b>Referencing Objects</b>", "IN Foldout");
-            EditorGUI.indentLevel++;
-            EditorGUILayout.HelpBox("Sub assets are excluded.", MessageType.None);
-            foreach (var asset in _referencingAssets.Except(_subAssets))
-            {
-                var r = EditorGUILayout.GetControlRect();
-
-                r.width -= 20;
-                EditorGUI.ObjectField(r, asset, asset.GetType(), false);
-
-                r.x += r.width;
-                r.y -= 1;
-                r.width = 20;
-                r.height = 20;
-
-                // Add object to sub asset.
-                if (GUI.Button(r, _contentAdd, EditorStyles.label))
-                {
-                    var addAsset = asset;
-                    EditorApplication.delayCall += () => AddSubAsset(addAsset);
-                }
-            }
-
-            EditorGUI.indentLevel--;
-
-            DrawImportArea();
-
             if (!_hasSelectionChanged) return;
 
             _hasSelectionChanged = false;
@@ -301,7 +318,7 @@ namespace Coffee.Editors
         private void DrawImportArea()
         {
             GUILayout.Space(5);
-            var dropArea = GUILayoutUtility.GetRect(0, 20, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(true));
+            var dropArea = GUILayoutUtility.GetRect(0, 20, GUILayout.ExpandWidth(true), GUILayout.ExpandHeight(false));
             GUI.Box(dropArea, _contentImport, EditorStyles.helpBox);
 
             var id = GUIUtility.GetControlID(FocusType.Passive);
@@ -379,6 +396,57 @@ namespace Coffee.Editors
             else if (obj is ScriptableObject)
                 return "asset";
             return "";
+        }
+
+        private void DeleteUnusedAll()
+        {
+            foreach (var asset in _subAssets)
+            {
+                if (!_referencingAssets.Contains(asset))
+                {
+                    DeleteSubAsset(asset);
+                }
+            }
+        }
+        private void ShowAll()
+        {
+            var active = Selection.activeObject;
+            var assetPath = AssetDatabase.GetAssetPath(active);
+            foreach (var asset in AssetDatabase.LoadAllAssetsAtPath(assetPath).Where(x => x != null && !(x is GameObject || x is Component) && x != _current).Distinct())
+            {
+                asset.hideFlags = HideFlags.None;
+            }
+            AssetDatabase.Refresh();
+            AssetDatabase.SaveAssets();
+        }
+
+        private void ShowPart()
+        {
+            foreach (var asset in _subAssets)
+            {
+                if (asset.GetType() == typeof(AnimatorStateTransition) || asset.GetType() == typeof(BlendTree) || asset.GetType() == typeof(AvatarMask) || asset.GetType() == typeof(AnimatorStateMachine) || asset.GetType() == typeof(AnimatorState) || asset.GetType().IsSubclassOf(typeof(StateMachineBehaviour)))
+                {
+                    SerializedObject so = new SerializedObject(asset);
+                    var sp = so.GetIterator();
+
+                    // Search referencing asset in SerializedProperties.
+                    while (sp.Next(true))
+                    {
+                        if(sp.propertyPath== "m_ObjectHideFlags")
+                        {
+                            sp.intValue = 1;
+                        }
+                    }
+
+                    sp.serializedObject.ApplyModifiedProperties();
+                }
+                else
+                {
+                    Debug.Log(asset.GetType());
+                }
+            }
+            AssetDatabase.Refresh();
+            AssetDatabase.SaveAssets();
         }
     }
 }
